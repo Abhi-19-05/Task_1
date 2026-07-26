@@ -17,31 +17,41 @@ st.set_page_config(
 # Model Configuration
 # ---------------------------
 MODEL_PATH = "movie_recommender.pkl"
-MODEL_URL = "https://drive.google.com/uc?export=download&id=1QgS3fnB4Plq-G2lJGx4rZ8Pq9R-J9SYh"
+
+# CHANGE v1.0 IF YOUR RELEASE TAG IS DIFFERENT
+MODEL_URL = "https://github.com/Abhi-19-05/Task_1/releases/download/v1.0/movie_recommender.pkl"
 
 # ---------------------------
-# Download Model (if needed)
+# Load Model
 # ---------------------------
 @st.cache_resource
 def load_model():
 
     if not os.path.exists(MODEL_PATH):
-        with st.spinner("Downloading model... Please wait."):
-            response = requests.get(MODEL_URL)
 
-            if response.status_code != 200:
-                st.error("Failed to download the model.")
-                st.stop()
+        with st.spinner("Downloading recommendation model..."):
+
+            response = requests.get(MODEL_URL, stream=True)
+            response.raise_for_status()
+
+            total_size = int(response.headers.get("content-length", 0))
+
+            downloaded = 0
 
             with open(MODEL_PATH, "wb") as f:
-                f.write(response.content)
+                for chunk in response.iter_content(chunk_size=1024 * 1024):
+                    if chunk:
+                        f.write(chunk)
+                        downloaded += len(chunk)
+
+        if os.path.getsize(MODEL_PATH) < 1024:
+            st.error("Downloaded model is invalid.")
+            st.stop()
 
     with open(MODEL_PATH, "rb") as f:
         return pickle.load(f)
 
-# ---------------------------
-# Load Model
-# ---------------------------
+
 model = load_model()
 
 user_movie_matrix = model["user_movie_matrix"]
@@ -78,6 +88,7 @@ def recommend_movies(user_id, top_n=5):
         for movie_id, rating in sim_ratings.items():
 
             if rating > 0 and movie_id not in watched_movies:
+
                 recommendations[movie_id] = (
                     recommendations.get(movie_id, 0)
                     + rating * similarity
@@ -92,23 +103,26 @@ def recommend_movies(user_id, top_n=5):
     result = []
 
     for movie_id, score in recommendations:
-        result.append({
-            "Movie ID": movie_id,
-            "Movie Title": movie_titles.get(movie_id, "Unknown"),
-            "Score": round(score, 3)
-        })
+
+        result.append(
+            {
+                "Movie ID": movie_id,
+                "Movie Title": movie_titles.get(movie_id, "Unknown"),
+                "Score": round(score, 3),
+            }
+        )
 
     return pd.DataFrame(result)
+
 
 # ---------------------------
 # Streamlit UI
 # ---------------------------
 st.title("🎬 Movie Recommendation System")
 
-st.markdown("""
-This application recommends movies using **User-Based Collaborative Filtering**
-with **Cosine Similarity**.
-""")
+st.write(
+    "This application recommends movies using **User-Based Collaborative Filtering**."
+)
 
 st.sidebar.header("Settings")
 
@@ -116,14 +130,14 @@ user_id = st.sidebar.number_input(
     "User ID",
     min_value=int(user_movie_matrix.index.min()),
     max_value=int(user_movie_matrix.index.max()),
-    value=int(user_movie_matrix.index.min())
+    value=int(user_movie_matrix.index.min()),
 )
 
 top_n = st.sidebar.slider(
     "Top N Recommendations",
-    min_value=1,
-    max_value=20,
-    value=5
+    1,
+    20,
+    5,
 )
 
 if st.sidebar.button("Recommend"):
@@ -131,18 +145,15 @@ if st.sidebar.button("Recommend"):
     recommendations = recommend_movies(user_id, top_n)
 
     if recommendations.empty:
-        st.error("No recommendations found for this user.")
+        st.warning("No recommendations found.")
     else:
-        st.subheader(f"Top {top_n} Recommendations for User {user_id}")
+        st.subheader(f"Top {top_n} Recommendations")
         st.dataframe(
             recommendations,
             use_container_width=True,
-            hide_index=True
+            hide_index=True,
         )
 
-# ---------------------------
-# Footer
-# ---------------------------
 st.divider()
 
 col1, col2 = st.columns(2)
@@ -150,4 +161,4 @@ col1, col2 = st.columns(2)
 col1.metric("Users", len(user_movie_matrix.index))
 col2.metric("Movies", len(user_movie_matrix.columns))
 
-st.caption("Built using Python, Pandas, Scikit-learn and Streamlit")
+st.caption("Built using Python • Pandas • Scikit-learn • Streamlit")
