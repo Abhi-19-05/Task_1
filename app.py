@@ -1,6 +1,8 @@
-import streamlit as st
-import pandas as pd
+import os
 import pickle
+import requests
+import pandas as pd
+import streamlit as st
 
 # ---------------------------
 # Page Configuration
@@ -12,13 +14,34 @@ st.set_page_config(
 )
 
 # ---------------------------
-# Load Pickle Model
+# Model Configuration
+# ---------------------------
+MODEL_PATH = "movie_recommender.pkl"
+MODEL_URL = "https://drive.google.com/uc?export=download&id=1QgS3fnB4Plq-G2lJGx4rZ8Pq9R-J9SYh"
+
+# ---------------------------
+# Download Model (if needed)
 # ---------------------------
 @st.cache_resource
 def load_model():
-    with open("movie_recommender.pkl", "rb") as f:
+
+    if not os.path.exists(MODEL_PATH):
+        with st.spinner("Downloading model... Please wait."):
+            response = requests.get(MODEL_URL)
+
+            if response.status_code != 200:
+                st.error("Failed to download the model.")
+                st.stop()
+
+            with open(MODEL_PATH, "wb") as f:
+                f.write(response.content)
+
+    with open(MODEL_PATH, "rb") as f:
         return pickle.load(f)
 
+# ---------------------------
+# Load Model
+# ---------------------------
 model = load_model()
 
 user_movie_matrix = model["user_movie_matrix"]
@@ -34,14 +57,12 @@ def recommend_movies(user_id, top_n=5):
     if user_id not in user_similarity_df.index:
         return pd.DataFrame()
 
-    # Top similar users
     similar_users = (
         user_similarity_df.loc[user_id]
         .sort_values(ascending=False)
         .iloc[1:11]
     )
 
-    # Movies already watched
     watched_movies = (
         user_movie_matrix.loc[user_id]
         [user_movie_matrix.loc[user_id] > 0]
@@ -57,7 +78,6 @@ def recommend_movies(user_id, top_n=5):
         for movie_id, rating in sim_ratings.items():
 
             if rating > 0 and movie_id not in watched_movies:
-
                 recommendations[movie_id] = (
                     recommendations.get(movie_id, 0)
                     + rating * similarity
@@ -72,7 +92,6 @@ def recommend_movies(user_id, top_n=5):
     result = []
 
     for movie_id, score in recommendations:
-
         result.append({
             "Movie ID": movie_id,
             "Movie Title": movie_titles.get(movie_id, "Unknown"),
@@ -86,12 +105,10 @@ def recommend_movies(user_id, top_n=5):
 # ---------------------------
 st.title("🎬 Movie Recommendation System")
 
-st.markdown(
-"""
+st.markdown("""
 This application recommends movies using **User-Based Collaborative Filtering**
 with **Cosine Similarity**.
-"""
-)
+""")
 
 st.sidebar.header("Settings")
 
@@ -99,7 +116,7 @@ user_id = st.sidebar.number_input(
     "User ID",
     min_value=int(user_movie_matrix.index.min()),
     max_value=int(user_movie_matrix.index.max()),
-    value=1
+    value=int(user_movie_matrix.index.min())
 )
 
 top_n = st.sidebar.slider(
@@ -114,10 +131,14 @@ if st.sidebar.button("Recommend"):
     recommendations = recommend_movies(user_id, top_n)
 
     if recommendations.empty:
-        st.error("No recommendations found.")
+        st.error("No recommendations found for this user.")
     else:
         st.subheader(f"Top {top_n} Recommendations for User {user_id}")
-        st.dataframe(recommendations, use_container_width=True, hide_index=True)
+        st.dataframe(
+            recommendations,
+            use_container_width=True,
+            hide_index=True
+        )
 
 # ---------------------------
 # Footer
